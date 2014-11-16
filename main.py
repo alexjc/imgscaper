@@ -77,6 +77,7 @@ class ImageScaper(object):
         # of the specification.  There are no interesting patterns, just colors.
         self.output = np.array([c_averages[(i-1)%BIN_COUNT] for i in S_indices], dtype=np.float32)\
                             .reshape(self.spec.shape[0], self.spec.shape[1], 3)
+        self.coverage = np.zeros(self.output.shape[:2], dtype=np.uint8)
 
         # Prepare a masking array used for blending and feathering out the edges of patches.
         self.createMask()
@@ -87,20 +88,28 @@ class ImageScaper(object):
         parts of the source image accordingly.
         """
 
-        for i in range(iterations):
-            sys.stdout.write("%3.1f%%\r" % (float(i+1) * 100.0 / iterations)); sys.stdout.flush();
-
+        count = 0
+        while True:
             # Select a random pixel index (i) and determine its bin (bn).
             i, bn = random.choice(self.spec_bins)
 
+            # TODO: Only select pixel indices that fall within the range of the image, 
+            # saves some extra computation and reduces complexity.
+
             # Check coordinates and discard if it's out of bounds.
-            # TODO: Apply the patch anyway with clamping/mirroring; check if numpy
-            # supports this form of indexing.
             ty, tx = i//self.spec.shape[1], i%self.spec.shape[1]
             if ty+PATCH_START < 0 or ty+PATCH_FINISH > self.output.shape[0]:
                 continue
             if tx+PATCH_START < 0 or tx+PATCH_FINISH > self.output.shape[1]:
                 continue
+
+            if self.coverage[ty,tx] > 0:
+                continue
+
+            count += 1
+            if count > iterations:
+                break
+            sys.stdout.write("%3.1f%%\r" % (float(count+1) * 100.0 / iterations)); sys.stdout.flush();
 
             # In some cases the bins chosen may not contain any samples, in that case
             # just ignore this pixel and try again.
@@ -155,9 +164,13 @@ class ImageScaper(object):
         """Store a patch centered on (ty, tx) in the output image based on the source
         image at location (sy, sx), using the blend mask calculated statically.
         """
-        self.output[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH,1] = \
-            self.output[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH,1] * (1.0 - self.mask) \
-          + self.img[sy+PATCH_START:sy+PATCH_FINISH,sx+PATCH_START:sx+PATCH_FINISH,1] * self.mask
+        for i in range(3):
+            self.output[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH,i] = \
+                self.output[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH,i] * (1.0 - self.mask) \
+              + self.img[sy+PATCH_START:sy+PATCH_FINISH,sx+PATCH_START:sx+PATCH_FINISH,i] * self.mask
+
+        self.coverage[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH] += \
+                (self.mask == 1.0)
 
 
     def pickBestPatch(self, ty, tx, coords):
@@ -166,8 +179,8 @@ class ImageScaper(object):
         """
         results = []
         for sy, sx in random.sample(list(coords), min(len(coords), PATCH_COUNT)):
-            # TODO: If the patch doesn't fully fit, then assume the image either
-            # clamps or loops, depending what numpy can do easily.
+            # TODO: Discard in the list of coordinates those that don't fit within
+            # the image anyway, reducing complexity here.
             if sy+PATCH_START < 0 or sy+PATCH_FINISH > self.img.shape[0]:
                 continue
             if sx+PATCH_START < 0 or sx+PATCH_FINISH > self.img.shape[1]:
@@ -192,15 +205,19 @@ def main(args):
 
     spec = scipy.misc.imread(args[0])
     spec = ops.normalized(ops.distance(spec))
-    scipy.misc.imsave('output_dist.jpg', spec)
+
+    # Create a bigger array so there's room around the edges to apply large patches.
+    # Numpy doesn't make clamping efficient or easy, so it's best just resize before starting.
+    spec_copy = np.zeros((spec.shape[0]+PATCH_SIZE, spec.shape[1]+PATCH_SIZE), dtype=spec.dtype)
+    spec_copy[PATCH_SIZE//2:-PATCH_SIZE//2, PATCH_SIZE//2:-PATCH_SIZE//2] = spec
 
     src = ops.rgb2hls(scipy.misc.imread(args[1]))
 
-    scraper = ImageScaper(src, spec)
+    scraper = ImageScaper(src, spec_copy)
     repro = scraper.process(5000)
 
     output = ops.hls2rgb(repro)
-    scipy.misc.imsave(args[2], output)
+    scipy.misc.imsave(args[2], output[PATCH_SIZE//2:-PATCH_SIZE//2, PATCH_SIZE//2:-PATCH_SIZE//2])
 
 
 if __name__ == "__main__":
