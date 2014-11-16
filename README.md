@@ -3,6 +3,8 @@ ImageScaper
 
 A command-line tool for generating unique 2D textures procedurally given example images and a specification.  It's a patch-based algorithm that repeatedly splats areas from the example image into the generated output image.
 
+![Input/Output Example](/docs/example.jpg?raw=true)
+
 
 Usage
 -----
