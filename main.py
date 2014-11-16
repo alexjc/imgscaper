@@ -43,16 +43,18 @@ class ImageScaper(object):
             :spec:      Image as 2D array of greyscale pixels.
         """
 
-        # Source image is assumed to be a HLS-encoded array, which is blurred.
+        # Source image is now blurred, then encoded to be a HLS-encoded array.
         self.img = source
         self.img_size = source.shape
         self.img_blurred = ops.blur(source, BLUR_SIGMA)
-        self.img_luminosity = self.img_blurred[:,:,1]
+        self.img_luminosity = ops.rgb2hls(self.img_blurred)[:,:,1]
 
         # Now we make a histogram of the blurred luminosities, each in bins.
         L = self.img_luminosity
         hist, bins = np.histogram(L, density=True, bins=BIN_COUNT)
         L_indices = np.digitize(L.flatten(), bins)
+
+        scipy.misc.imsave("test_lum.png", L)
 
         # Store the center of all patches by using the luminosity bins. 
         coordinates = np.indices((source.shape[0], source.shape[1])).swapaxes(0,2).swapaxes(0,1)
@@ -66,17 +68,18 @@ class ImageScaper(object):
         # Normalize the specification image based on what our luminosity can provide.
         ml = min(L.flatten())
         sl = max(L.flatten()) - ml
-        self.spec_normalized = (1.0 - spec ** LIGHTNESS_POWER) * sl + ml
-        self.spec = spec
+        self.spec = ml + spec * sl
 
         # Apply the same binning process to the spec image....
-        S_indices = np.digitize(self.spec_normalized.flatten(), bins)
+        S_indices = np.digitize(self.spec.flatten(), bins)
         self.spec_bins = list(enumerate(S_indices))
 
         # Generate a first version of the output based on the average given the luminosity
         # of the specification.  There are no interesting patterns, just colors.
         self.output = np.array([c_averages[(i-1)%BIN_COUNT] for i in S_indices], dtype=np.float32)\
                             .reshape(self.spec.shape[0], self.spec.shape[1], 3)
+        scipy.misc.imsave("test_output.png", self.output)
+
         self.coverage = np.zeros(self.output.shape[:2], dtype=np.uint8)
 
         # Prepare a masking array used for blending and feathering out the edges of patches.
@@ -203,20 +206,23 @@ def main(args):
         print("ERROR: Provide [spec] [source] [target] as script parameters.", file=sys.stderr)
         return -1
 
-    spec = scipy.misc.imread(args[0])
-    spec = ops.normalized(ops.distance(spec))
+    # The input specification is read as-is from disk, though it can be created
+    # using a distance field like ops.distance() as in previous versions.
+    spec = ops.normalized(scipy.misc.imread(args[0]).astype(dtype=np.float32))
+    scipy.misc.imsave("test_spec.png", spec)
 
     # Create a bigger array so there's room around the edges to apply large patches.
     # Numpy doesn't make clamping efficient or easy, so it's best just resize before starting.
     spec_copy = np.zeros((spec.shape[0]+PATCH_SIZE, spec.shape[1]+PATCH_SIZE), dtype=spec.dtype)
     spec_copy[PATCH_SIZE//2:-PATCH_SIZE//2, PATCH_SIZE//2:-PATCH_SIZE//2] = spec
 
-    src = ops.rgb2hls(scipy.misc.imread(args[1]))
+    # This is the example input, for example a high-resolution photo or a textu
+    # copy the style from.
+    src = scipy.misc.imread(args[1])
 
     scraper = ImageScaper(src, spec_copy)
-    repro = scraper.process(5000)
+    output = scraper.process(5000)
 
-    output = ops.hls2rgb(repro)
     scipy.misc.imsave(args[2], output[PATCH_SIZE//2:-PATCH_SIZE//2, PATCH_SIZE//2:-PATCH_SIZE//2])
 
 
