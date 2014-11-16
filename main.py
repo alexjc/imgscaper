@@ -192,6 +192,7 @@ def main(args):
 
     spec = scipy.misc.imread(args[0])
     spec = ops.normalized(ops.distance(spec))
+    scipy.misc.imsave('output_dist.jpg', spec)
 
     src = ops.rgb2hls(scipy.misc.imread(args[1]))
 
