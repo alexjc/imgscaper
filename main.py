@@ -53,12 +53,14 @@ class ImageScaper(object):
         """
 
         # Source image is now blurred, then encoded to be a HLS-encoded array.
+        logging.debug("Converting to HLS color space.")
         self.img = source
         self.img_size = source.shape
         self.img_blurred = ops.blur(source, BLUR_SIGMA)
         self.img_luminosity = ops.rgb2hls(self.img_blurred)[:,:,1]
 
         # Now we make a histogram of the blurred luminosities, each in bins.
+        logging.debug("Preparing first version of output.")
         L = window(self.img_luminosity)
         hist, bins = np.histogram(L, density=True, bins=BIN_COUNT)
         L_indices = np.digitize(L.flatten(), bins)
@@ -105,6 +107,7 @@ class ImageScaper(object):
         """Randomly pick locations to add patches to the output image, and pick the best 
         parts of the source image accordingly.
         """
+        logging.debug("Iteratively splatting patches...")
 
         resolution = self.coverage.shape[0] - PATCH_SIZE, self.coverage.shape[1] - PATCH_SIZE
         count, total = 0, resolution[0] * resolution[1]
@@ -135,7 +138,7 @@ class ImageScaper(object):
 
             self.splatThisPatch(sy, sx, ty, tx)
 
-            progress = (1.0 - len(ay) / total)
+            progress = 1.0 - len(ay) / total
             sys.stdout.write("%3.1f%%\r" % (100.0 * progress)); sys.stdout.flush();
 
         # The output image can now be used in its current form, or other
@@ -210,11 +213,12 @@ class ImageScaper(object):
 
 def main(args):
     if len(args) != 3:
-        print("ERROR: Provide [spec] [source] [target] as script parameters.", file=sys.stderr)
+        logging.error("Provide [spec] [example] [output] as script parameters.", file=sys.stderr)
         return -1
 
     # The input specification is read as-is from disk, though it can be created
     # using a distance field like ops.distance() as in previous versions.
+    logging.info("Loading input specification file.")
     spec = ops.normalized(scipy.misc.imread(args[0]).astype(dtype=np.float32))
 
     # Create a bigger array so there's room around the edges to apply large patches.
@@ -224,13 +228,16 @@ def main(args):
 
     # This is the example input, for example a high-resolution photo or a textu
     # copy the style from.
+    logging.info("Loading input example image.")
     src = scipy.misc.imread(args[1])
 
     scraper = ImageScaper(src, spec_copy)
     output = scraper.process()
 
+    logging.info("Saving generated image to disk.")
     scipy.misc.imsave(args[2], window(output))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
     main(sys.argv[1:])
