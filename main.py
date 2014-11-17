@@ -68,11 +68,11 @@ class ImageScaper(object):
         # Store the center of all patches by using the luminosity bins. 
         coordinates = np.indices((source.shape[0]-PATCH_SIZE, source.shape[1]-PATCH_SIZE)).swapaxes(0,2).swapaxes(0,1)
         coordinates += [PATCH_HALF, PATCH_HALF]
-        self.c_coords = self._bin(bins, L_indices, coordinates)
+        self.c_coords = self.createBins(L_indices, coordinates)
 
         # For each bin we calculate the average color, per-luminosity which assumes
         # the image patterns don't have too much hue variation.
-        c_buckets = self._bin(bins, L_indices, self.img_blurred)
+        c_buckets = self.createBins(L_indices, window(self.img_blurred))
         c_averages = [np.average(bucket, axis=0) for bucket in c_buckets]
 
         # Normalize the specification image based on what our luminosity can provide.
@@ -96,7 +96,6 @@ class ImageScaper(object):
         # of the specification.  There are no interesting patterns, just colors.
         self.output = np.array([c_averages[min(bn-1, BIN_COUNT-1)] for bn in S_indices], dtype=np.float32)\
                             .reshape(self.spec.shape[0], self.spec.shape[1], 3)
-
         self.coverage = np.zeros(self.output.shape[:2], dtype=np.uint8)
 
         # Prepare a masking array used for blending and feathering out the edges of patches.
@@ -117,7 +116,7 @@ class ImageScaper(object):
             # Determine pixel coverage for output image inside the target window.
             cover = window(self.coverage)
             ay, ax = np.where(cover == 0)
-            if len(ay) == 0:
+            if iterations is not None and len(ay) == 0:
                 break
             
             # Select a random pixel index (ty, tx) and determine its bin (bn).
@@ -148,12 +147,12 @@ class ImageScaper(object):
         return repro
 
 
-    def _bin(self, bins, indices, array):
+    def createBins(self, indices, array):
         """Given a histogram's bin and a set of binned indices, select the subset of the
         array that correspons to each of the bins.
         """
         flat_array = array.reshape(array.shape[0] * array.shape[1], array.shape[2])
-        return [flat_array[indices == i] for i in range(1, len(bins))]
+        return [flat_array[indices == i] for i in range(1, BIN_COUNT+1)]
 
 
     def createMask(self):
@@ -230,7 +229,7 @@ def main(args):
     # This is the example input, for example a high-resolution photo or a textu
     # copy the style from.
     logging.info("Loading input example image.")
-    src = scipy.misc.imread(args[1])
+    src = scipy.misc.imread(args[1]).astype(dtype=np.float32)
 
     scraper = ImageScaper(src, spec_copy)
     output = scraper.process()
