@@ -116,9 +116,15 @@ class ImageScaper(object):
             # Determine pixel coverage for output image inside the target window.
             cover = window(self.coverage)
             ay, ax = np.where(cover == 0)
-            if iterations is not None and len(ay) == 0:
-                break
-            
+            if len(ay) == 0:
+                # No more pixels left to cover, if specific number of iterations was requested
+                # then we cover each pixels once more!
+                if iterations is not None:
+                    self.coverage[:,:] -= 1
+                    continue
+                else:
+                    break
+
             # Select a random pixel index (ty, tx) and determine its bin (bn).
             i = random.randint(0, len(ay)-1)
             ty, tx = ay[i] + PATCH_HALF, ax[i] + PATCH_HALF

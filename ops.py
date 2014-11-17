@@ -22,7 +22,7 @@ def hls2rgb(img):
 
 
 def blur(img, sigma):
-    output = img.copy()
+    output = img.astype(numpy.float32)
     output[:,:,0] = gaussian_filter(img[:,:,0], sigma=sigma)
     output[:,:,1] = gaussian_filter(img[:,:,1], sigma=sigma)
     output[:,:,2] = gaussian_filter(img[:,:,2], sigma=sigma)
