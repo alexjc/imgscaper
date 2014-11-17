@@ -96,7 +96,7 @@ class ImageScaper(object):
         # of the specification.  There are no interesting patterns, just colors.
         self.output = np.array([c_averages[min(bn-1, BIN_COUNT-1)] for bn in S_indices], dtype=np.float32)\
                             .reshape(self.spec.shape[0], self.spec.shape[1], 3)
-        self.coverage = np.zeros(self.output.shape[:2], dtype=np.uint8)
+        self.coverage = np.zeros(self.output.shape[:2], dtype=np.float32)
 
         # Prepare a masking array used for blending and feathering out the edges of patches.
         self.createMask()
@@ -115,12 +115,12 @@ class ImageScaper(object):
 
             # Determine pixel coverage for output image inside the target window.
             cover = window(self.coverage)
-            ay, ax = np.where(cover == 0)
+            ay, ax = np.where(cover < 1.0)
             if len(ay) == 0:
                 # No more pixels left to cover, if specific number of iterations was requested
                 # then we cover each pixels once more!
                 if iterations is not None:
-                    self.coverage[:,:] -= 1
+                    self.coverage[:,:] -= 1.0
                     continue
                 else:
                     break
@@ -133,7 +133,7 @@ class ImageScaper(object):
             # In some cases the bins chosen may not contain any samples, in that case
             # just ignore this pixel and try again.
             if len(self.c_coords[bn-1]) == 0:
-                self.coverage[ty,tx] += 1
+                self.coverage[ty,tx] += 1.0
                 continue
 
             # Find a source image patch for this target coordinate, and then splat it!
@@ -144,13 +144,13 @@ class ImageScaper(object):
             self.splatThisPatch(sy, sx, ty, tx)
 
             # The final stages are slower as many remaining pixels require their own patch.
-            progress = math.pow(1.0 - len(ay) / total, 4.0)
+            progress = math.pow(1.0 - len(ay) / total, 3.0)
             sys.stdout.write("%3.1f%%\r" % (100.0 * progress)); sys.stdout.flush();
 
         # The output image can now be used in its current form, or other
         # iterations may be performed.
         repro = self.output.reshape(self.spec.shape[0], self.spec.shape[1], 3)
-        return repro
+        return repro, len(ay) == 0
 
 
     def createBins(self, indices, array):
@@ -194,8 +194,7 @@ class ImageScaper(object):
                 self.output[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH,i] * (1.0 - self.mask) \
               + self.img[sy+PATCH_START:sy+PATCH_FINISH,sx+PATCH_START:sx+PATCH_FINISH,i] * self.mask
 
-        self.coverage[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH] += \
-                (self.mask == 1.0)
+        self.coverage[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH] += self.mask
 
 
     def pickBestPatch(self, ty, tx, coords):
@@ -238,7 +237,7 @@ def main(args):
     src = scipy.misc.imread(args[1]).astype(dtype=np.float32)
 
     scraper = ImageScaper(src, spec_copy)
-    output = scraper.process()
+    output, _ = scraper.process()
 
     logging.info("Saving generated image to disk.")
     scipy.misc.imsave(args[2], window(output))
