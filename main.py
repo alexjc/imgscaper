@@ -90,11 +90,11 @@ class ImageScaper(object):
                 continue
             if tx+PATCH_START < 0 or tx+PATCH_FINISH > self.spec.shape[1]:
                 continue
-            self.spec_bins[(ty, tx)] = bn
+            self.spec_bins[(ty, tx)] = min(bn-1, BIN_COUNT-1)
 
         # Generate a first version of the output based on the average given the luminosity
         # of the specification.  There are no interesting patterns, just colors.
-        self.output = np.array([c_averages[(i-1)%BIN_COUNT] for i in S_indices], dtype=np.float32)\
+        self.output = np.array([c_averages[min(bn-1, BIN_COUNT-1)] for bn in S_indices], dtype=np.float32)\
                             .reshape(self.spec.shape[0], self.spec.shape[1], 3)
 
         self.coverage = np.zeros(self.output.shape[:2], dtype=np.uint8)
@@ -127,7 +127,7 @@ class ImageScaper(object):
 
             # In some cases the bins chosen may not contain any samples, in that case
             # just ignore this pixel and try again.
-            if bn-1 >= BIN_COUNT-1 or len(self.c_coords[bn-1]) == 0:
+            if len(self.c_coords[bn-1]) == 0:
                 self.coverage[ty,tx] += 1
                 continue
 
@@ -138,7 +138,8 @@ class ImageScaper(object):
 
             self.splatThisPatch(sy, sx, ty, tx)
 
-            progress = 1.0 - len(ay) / total
+            # The final stages are slower as many remaining pixels require their own patch.
+            progress = math.pow(1.0 - len(ay) / total, 4.0)
             sys.stdout.write("%3.1f%%\r" % (100.0 * progress)); sys.stdout.flush();
 
         # The output image can now be used in its current form, or other
@@ -189,7 +190,7 @@ class ImageScaper(object):
               + self.img[sy+PATCH_START:sy+PATCH_FINISH,sx+PATCH_START:sx+PATCH_FINISH,i] * self.mask
 
         self.coverage[ty+PATCH_START:ty+PATCH_FINISH,tx+PATCH_START:tx+PATCH_FINISH] += \
-                (self.mask > 0.0)
+                (self.mask == 1.0)
 
 
     def pickBestPatch(self, ty, tx, coords):
